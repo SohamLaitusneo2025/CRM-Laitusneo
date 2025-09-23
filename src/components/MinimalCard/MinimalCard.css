@@ -1,0 +1,91 @@
+.minimal-card {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+  border-left: 4px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.minimal-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.minimal-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.minimal-content {
+  flex: 1;
+}
+
+.minimal-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.minimal-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  line-height: 1;
+}
+
+/* Color themes */
+.minimal-card-blue {
+  border-left-color: #3b82f6;
+}
+
+.minimal-icon-blue {
+  background-color: #dbeafe;
+  color: #3b82f6;
+}
+
+.minimal-card-green {
+  border-left-color: #10b981;
+}
+
+.minimal-icon-green {
+  background-color: #dcfce7;
+  color: #10b981;
+}
+
+.minimal-card-red {
+  border-left-color: #ef4444;
+}
+
+.minimal-icon-red {
+  background-color: #fef2f2;
+  color: #ef4444;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .minimal-card {
+    padding: 12px;
+  }
+  
+  .minimal-value {
+    font-size: 18px;
+  }
+  
+  .minimal-icon {
+    width: 36px;
+    height: 36px;
+  }
+}
