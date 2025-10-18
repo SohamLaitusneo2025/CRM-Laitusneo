@@ -1,15 +1,18 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+from flask_mail import Mail, Message
 from werkzeug.exceptions import BadRequest
 import re
 import secrets
 import string
+import random
 from datetime import datetime, timedelta
 
 from config import Config
-from models import db, User, Product, Task, Lead, Deal, Meeting
-from swagger.api import swagger_bp
+from models import db, User, Product, Task, Lead, Deal, Meeting, Campaign, CampaignEmail
+from swagger.comprehensive_api import swagger_bp
+from real_working_google_meet import real_working_google_meet
 
 def create_app():
     app = Flask(__name__)
@@ -18,6 +21,7 @@ def create_app():
     # Initialize extensions
     db.init_app(app)
     jwt = JWTManager(app)
+    mail = Mail(app)
     CORS(app, origins=['http://localhost:3000'])  # React dev server
     
     # Register Swagger Blueprint
@@ -363,7 +367,7 @@ def create_app():
     @app.route('/api/salesmen', methods=['GET'])
     @jwt_required()
     def list_salesmen():
-        """List sub-users (salesmen) for the current main user. Includes both active and inactive users."""
+        """List all sub-users (salesmen) for the current main user. Includes both active and inactive users."""
         try:
             current_user_id = get_jwt_identity()
             current_user = User.query.get(current_user_id)
@@ -373,6 +377,7 @@ def create_app():
             subs = (
                 User.query
                 .filter_by(main_user_id=current_user.id, user_type='sub')
+                .filter(~User.email.like('deleted_%'))  # Exclude soft-deleted users
                 .order_by(User.created_at.desc())
                 .all()
             )
@@ -1156,8 +1161,8 @@ def create_app():
                 # Sub-user sees their own deals
                 deals = Deal.query.filter_by(salesman_id=current_user.id).order_by(Deal.created_at.desc()).all()
             elif current_user.user_type == 'main':
-                # Main user sees deals from all their sub-users (both active and inactive)
-                sub_user_ids = [u.id for u in current_user.sub_users]
+                # Main user sees deals from all their sub-users (both active and inactive, but not deleted)
+                sub_user_ids = [u.id for u in current_user.sub_users if not u.email.startswith('deleted_')]
                 deals = Deal.query.filter(Deal.salesman_id.in_(sub_user_ids)).order_by(Deal.created_at.desc()).all()
             else:
                 return jsonify({'error': 'Invalid user type'}), 400
@@ -1452,8 +1457,8 @@ def create_app():
                 # Sub-user sees their own leads
                 leads = Lead.query.filter_by(salesman_id=current_user.id).order_by(Lead.created_at.desc()).all()
             elif current_user.user_type == 'main':
-                # Main user sees leads from all their sub-users (both active and inactive)
-                sub_user_ids = [u.id for u in current_user.sub_users]
+                # Main user sees leads from all their sub-users (both active and inactive, but not deleted)
+                sub_user_ids = [u.id for u in current_user.sub_users if not u.email.startswith('deleted_')]
                 leads = Lead.query.filter(Lead.salesman_id.in_(sub_user_ids)).order_by(Lead.created_at.desc()).all()
             else:
                 return jsonify({'error': 'Invalid user type'}), 400
@@ -1683,8 +1688,8 @@ def create_app():
             if not current_user or current_user.user_type != 'main':
                 return jsonify({'error': 'Only main users can view salesman updates'}), 403
 
-            # Get all sub-users (both active and inactive)
-            sub_users = User.query.filter_by(main_user_id=current_user.id, user_type='sub').all()
+            # Get all sub-users (both active and inactive, but not deleted)
+            sub_users = User.query.filter_by(main_user_id=current_user.id, user_type='sub').filter(~User.email.like('deleted_%')).all()
             
             updates = []
             for sub_user in sub_users:
@@ -1757,7 +1762,7 @@ def create_app():
             data = request.get_json()
             
             # Validate required fields
-            required_fields = ['type', 'clientName', 'mobileNumber', 'email', 'date', 'time']
+            required_fields = ['type', 'clientName', 'mobileNumber', 'email', 'date', 'time', 'productId']
             for field in required_fields:
                 if not data.get(field):
                     return jsonify({'error': f'{field} is required'}), 400
@@ -1780,8 +1785,13 @@ def create_app():
                 email=data['email'],
                 date=meeting_date,
                 time=meeting_time,
+                product_id=data.get('productId'),
+                product_name=data.get('productName'),
                 venue=data.get('venue'),
                 platform=data.get('platform'),
+                meeting_link=data.get('meetingLink'),
+                google_maps_link=data.get('googleMapsLink'),
+                message=data.get('message'),
                 status=data.get('status', 'Scheduled'),
                 salesman_id=current_user.id
             )
@@ -1808,8 +1818,8 @@ def create_app():
                 return jsonify({'error': 'User not found'}), 404
 
             if current_user.user_type == 'main':
-                # Main user sees meetings from all their sub-users
-                sub_user_ids = [u.id for u in current_user.sub_users]
+                # Main user sees meetings from all their sub-users (but not deleted)
+                sub_user_ids = [u.id for u in current_user.sub_users if not u.email.startswith('deleted_')]
                 meetings = Meeting.query.filter(Meeting.salesman_id.in_(sub_user_ids)).order_by(Meeting.date.desc(), Meeting.time.desc()).all()
             else:
                 # Sub-user sees only their own meetings
@@ -1841,7 +1851,7 @@ def create_app():
                     return jsonify({'error': 'You can only update your own meetings'}), 403
             elif current_user.user_type == 'main':
                 # Check if meeting belongs to one of their sub-users
-                sub_user_ids = [u.id for u in current_user.sub_users]
+                sub_user_ids = [u.id for u in current_user.sub_users if not u.email.startswith('deleted_')]
                 if meeting.salesman_id not in sub_user_ids:
                     return jsonify({'error': 'Meeting not found'}), 404
 
@@ -1866,6 +1876,10 @@ def create_app():
                 meeting.venue = data['venue']
             if 'platform' in data:
                 meeting.platform = data['platform']
+            if 'meetingLink' in data:
+                meeting.meeting_link = data['meetingLink']
+            if 'googleMapsLink' in data:
+                meeting.google_maps_link = data['googleMapsLink']
             if 'status' in data:
                 meeting.status = data['status']
 
@@ -1900,7 +1914,7 @@ def create_app():
                     return jsonify({'error': 'You can only delete your own meetings'}), 403
             elif current_user.user_type == 'main':
                 # Check if meeting belongs to one of their sub-users
-                sub_user_ids = [u.id for u in current_user.sub_users]
+                sub_user_ids = [u.id for u in current_user.sub_users if not u.email.startswith('deleted_')]
                 if meeting.salesman_id not in sub_user_ids:
                     return jsonify({'error': 'Meeting not found'}), 404
 
@@ -1934,7 +1948,7 @@ def create_app():
                     return jsonify({'error': 'You can only update your own meetings'}), 403
             elif current_user.user_type == 'main':
                 # Check if meeting belongs to one of their sub-users
-                sub_user_ids = [u.id for u in current_user.sub_users]
+                sub_user_ids = [u.id for u in current_user.sub_users if not u.email.startswith('deleted_')]
                 if meeting.salesman_id not in sub_user_ids:
                     return jsonify({'error': 'Meeting not found'}), 404
 
@@ -1960,6 +1974,571 @@ def create_app():
         except Exception as e:
             db.session.rollback()
             return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+    # Google Meet Integration endpoints
+    @app.route('/api/meetings/google-meet', methods=['POST'])
+    @jwt_required()
+    def create_google_meet_meeting():
+        """Create a Google Meet meeting using Google Calendar API"""
+        try:
+            current_user_id = get_jwt_identity()
+            current_user = User.query.get(current_user_id)
+            if not current_user:
+                return jsonify({'error': 'User not found'}), 404
+
+            data = request.get_json()
+            
+            # Use Real Working Google Meet to create a real Google Meet meeting
+            meeting_result = real_working_google_meet.create_real_working_meeting(data)
+            
+            return jsonify({
+                'message': meeting_result['message'],
+                'meetingLink': meeting_result['meetingLink'],
+                'meetingId': meeting_result['meetingId'],
+                'eventId': meeting_result.get('eventId')
+            }), 200
+            
+        except Exception as e:
+            print(f"Error in create_google_meet_meeting: {str(e)}")
+            return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+
+    @app.route('/api/meetings/send-invitation', methods=['POST'])
+    @jwt_required()
+    def send_meeting_invitation():
+        """Send meeting invitation email"""
+        try:
+            current_user_id = get_jwt_identity()
+            current_user = User.query.get(current_user_id)
+            if not current_user:
+                return jsonify({'error': 'User not found'}), 404
+
+            data = request.get_json()
+            
+            # Extract meeting data
+            client_name = data.get('clientName', '')
+            client_email = data.get('email', '')
+            meeting_date = data.get('date', '')
+            meeting_time = data.get('time', '')
+            product_name = data.get('productName', '')
+            meeting_link = data.get('meetingLink', '')
+            message = data.get('message', '')
+            
+            # Format date and time
+            try:
+                date_obj = datetime.strptime(meeting_date, '%Y-%m-%d')
+                time_obj = datetime.strptime(meeting_time, '%H:%M')
+                formatted_date = date_obj.strftime('%B %d, %Y')
+                formatted_time = time_obj.strftime('%I:%M %p')
+            except:
+                formatted_date = meeting_date
+                formatted_time = meeting_time
+            
+            # Create email content
+            subject = f"Meeting Invitation - {product_name} Discussion"
+            
+            html_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+                        <h1 style="margin: 0; font-size: 24px;">Meeting Invitation</h1>
+                        <p style="margin: 5px 0 0 0; opacity: 0.9;">LaitusNeo CRM System</p>
+                    </div>
+                    
+                    <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px;">
+                        <h2 style="color: #2c3e50; margin-top: 0;">Hello {client_name},</h2>
+                        
+                        <p>You have been invited to a meeting to discuss <strong>{product_name}</strong>.</p>
+                        
+                        <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4285f4;">
+                            <h3 style="margin-top: 0; color: #1a73e8;">Meeting Details</h3>
+                            <p><strong>Date:</strong> {formatted_date}</p>
+                            <p><strong>Time:</strong> {formatted_time}</p>
+                            <p><strong>Product:</strong> {product_name}</p>
+                            <p><strong>Meeting Type:</strong> Google Meet</p>
+                        </div>
+                        
+                        {f'<div style="background: #e8f5e8; padding: 15px; border-radius: 8px; margin: 20px 0;"><p style="margin: 0;"><strong>Personal Message:</strong><br>{message}</p></div>' if message else ''}
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="{meeting_link}" 
+                               style="background: #4285f4; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                                Join Google Meet
+                            </a>
+                        </div>
+                        
+                        <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                            <p style="margin: 0;"><strong>Note:</strong> Please join the meeting a few minutes early to ensure everything is working properly.</p>
+                        </div>
+                        
+                        <p>If you have any questions or need to reschedule, please contact us.</p>
+                        
+                        <hr style="border: none; border-top: 1px solid #dee2e6; margin: 30px 0;">
+                        
+                        <p style="font-size: 14px; color: #6c757d; margin: 0;">
+                            Best regards,<br>
+                            <strong>LaitusNeo Team</strong><br>
+                            <em>This email was sent from tools@laitusneo.com</em>
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Create and send email using Flask-Mail
+            msg = Message(
+                subject=subject,
+                recipients=[client_email],
+                html=html_body,
+                sender=app.config['MAIL_DEFAULT_SENDER']
+            )
+            
+            mail.send(msg)
+            
+            return jsonify({
+                'message': 'Meeting invitation sent successfully',
+                'emailSent': True,
+                'recipient': client_email,
+                'meetingLink': meeting_link
+            }), 200
+            
+        except Exception as e:
+            print(f"Email sending error: {str(e)}")
+            return jsonify({
+                'error': 'Failed to send email invitation', 
+                'details': str(e),
+                'emailSent': False
+            }), 500
+
+    # ==================== CAMPAIGN MANAGEMENT ENDPOINTS ====================
+    
+    @app.route('/api/salesman/campaigns', methods=['GET'])
+    @jwt_required()
+    def get_campaigns():
+        """Get all campaigns for the logged-in salesman"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'sub':
+                return jsonify({'error': 'Unauthorized. Sub-user access only.'}), 403
+            
+            campaigns = Campaign.query.filter_by(salesman_id=current_user_id).order_by(Campaign.created_at.desc()).all()
+            
+            return jsonify({
+                'campaigns': [campaign.to_dict() for campaign in campaigns]
+            }), 200
+            
+        except Exception as e:
+            print(f"Error fetching campaigns: {str(e)}")
+            return jsonify({'error': 'Failed to fetch campaigns', 'details': str(e)}), 500
+    
+    @app.route('/api/salesman/campaigns/<int:campaign_id>', methods=['GET'])
+    @jwt_required()
+    def get_campaign_details(campaign_id):
+        """Get detailed information about a specific campaign including all emails"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'sub':
+                return jsonify({'error': 'Unauthorized. Sub-user access only.'}), 403
+            
+            campaign = Campaign.query.filter_by(id=campaign_id, salesman_id=current_user_id).first()
+            
+            if not campaign:
+                return jsonify({'error': 'Campaign not found'}), 404
+            
+            # Get all emails for this campaign
+            emails = CampaignEmail.query.filter_by(campaign_id=campaign_id).order_by(CampaignEmail.created_at.desc()).all()
+            
+            campaign_data = campaign.to_dict()
+            campaign_data['emails'] = [email.to_dict() for email in emails]
+            
+            return jsonify(campaign_data), 200
+            
+        except Exception as e:
+            print(f"Error fetching campaign details: {str(e)}")
+            return jsonify({'error': 'Failed to fetch campaign details', 'details': str(e)}), 500
+    
+    @app.route('/api/salesman/campaigns', methods=['POST'])
+    @jwt_required()
+    def create_campaign():
+        """Create a new email campaign"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'sub':
+                return jsonify({'error': 'Unauthorized. Sub-user access only.'}), 403
+            
+            data = request.get_json()
+            
+            # Validate required fields
+            if not data.get('campaignName'):
+                return jsonify({'error': 'Campaign name is required'}), 400
+            if not data.get('subject'):
+                return jsonify({'error': 'Email subject is required'}), 400
+            if not data.get('emailBody'):
+                return jsonify({'error': 'Email body is required'}), 400
+            if not data.get('recipients') or not isinstance(data.get('recipients'), list):
+                return jsonify({'error': 'Recipients list is required'}), 400
+            
+            recipients = data['recipients']
+            if len(recipients) == 0:
+                return jsonify({'error': 'At least one recipient is required'}), 400
+            
+            # Create campaign
+            campaign = Campaign(
+                campaign_name=data['campaignName'],
+                subject=data['subject'],
+                email_body=data['emailBody'],
+                status='Draft',
+                total_recipients=len(recipients),
+                salesman_id=current_user_id
+            )
+            
+            db.session.add(campaign)
+            db.session.flush()  # Get campaign ID
+            
+            # Create campaign email records
+            for recipient in recipients:
+                if isinstance(recipient, str):
+                    email = recipient
+                    name = None
+                elif isinstance(recipient, dict):
+                    email = recipient.get('email')
+                    name = recipient.get('name')
+                else:
+                    continue
+                
+                if not email or not validate_email(email):
+                    continue
+                
+                campaign_email = CampaignEmail(
+                    campaign_id=campaign.id,
+                    recipient_email=email,
+                    recipient_name=name,
+                    status='Pending'
+                )
+                db.session.add(campaign_email)
+            
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'Campaign created successfully',
+                'campaign': campaign.to_dict()
+            }), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error creating campaign: {str(e)}")
+            return jsonify({'error': 'Failed to create campaign', 'details': str(e)}), 500
+    
+    @app.route('/api/salesman/campaigns/<int:campaign_id>/send', methods=['POST'])
+    @jwt_required()
+    def send_campaign(campaign_id):
+        """Send emails for a campaign"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'sub':
+                return jsonify({'error': 'Unauthorized. Sub-user access only.'}), 403
+            
+            campaign = Campaign.query.filter_by(id=campaign_id, salesman_id=current_user_id).first()
+            
+            if not campaign:
+                return jsonify({'error': 'Campaign not found'}), 404
+            
+            if campaign.status == 'Sent':
+                return jsonify({'error': 'Campaign has already been sent'}), 400
+            
+            # Update campaign status
+            campaign.status = 'Sending'
+            db.session.commit()
+            
+            # Get all pending emails
+            pending_emails = CampaignEmail.query.filter_by(
+                campaign_id=campaign_id,
+                status='Pending'
+            ).all()
+            
+            sent_count = 0
+            failed_count = 0
+            
+            # Send emails
+            for campaign_email in pending_emails:
+                try:
+                    # Create HTML email with professional styling
+                    html_body = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <style>
+                            body {{
+                                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                line-height: 1.6;
+                                color: #333;
+                                background-color: #f4f4f4;
+                                margin: 0;
+                                padding: 0;
+                            }}
+                            .email-container {{
+                                max-width: 600px;
+                                margin: 20px auto;
+                                background-color: #ffffff;
+                                border-radius: 8px;
+                                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                                overflow: hidden;
+                            }}
+                            .email-header {{
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                color: white;
+                                padding: 30px 20px;
+                                text-align: center;
+                            }}
+                            .email-header h1 {{
+                                margin: 0;
+                                font-size: 24px;
+                                font-weight: 600;
+                            }}
+                            .email-body {{
+                                padding: 30px;
+                            }}
+                            .email-body p {{
+                                margin: 0 0 15px 0;
+                            }}
+                            .greeting {{
+                                font-size: 18px;
+                                font-weight: 600;
+                                color: #667eea;
+                                margin-bottom: 20px;
+                            }}
+                            .content {{
+                                white-space: pre-wrap;
+                                word-wrap: break-word;
+                            }}
+                            .email-footer {{
+                                background-color: #f8f9fa;
+                                padding: 20px;
+                                text-align: center;
+                                font-size: 12px;
+                                color: #6c757d;
+                                border-top: 1px solid #dee2e6;
+                            }}
+                            .signature {{
+                                margin-top: 30px;
+                                padding-top: 20px;
+                                border-top: 2px solid #e9ecef;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="email-container">
+                            <div class="email-header">
+                                <h1>LaitusNeo Technologies</h1>
+                            </div>
+                            <div class="email-body">
+                                {f'<p class="greeting">Hello {campaign_email.recipient_name},</p>' if campaign_email.recipient_name else '<p class="greeting">Hello,</p>'}
+                                <div class="content">
+                                    {campaign.email_body}
+                                </div>
+                                <div class="signature">
+                                    <p>
+                                        <strong>Best Regards,</strong><br>
+                                        {user.first_name} {user.last_name}<br>
+                                        LaitusNeo Technologies<br>
+                                        <em>Email: laitusneotechnologies@gmail.com</em>
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="email-footer">
+                                <p>
+                                    © 2024 LaitusNeo Technologies. All rights reserved.<br>
+                                    This email was sent from a promotional campaign.
+                                </p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    # Send email using Flask-Mail
+                    msg = Message(
+                        subject=campaign.subject,
+                        recipients=[campaign_email.recipient_email],
+                        html=html_body,
+                        sender=app.config['MAIL_DEFAULT_SENDER']
+                    )
+                    
+                    mail.send(msg)
+                    
+                    # Update email status
+                    campaign_email.status = 'Sent'
+                    campaign_email.sent_at = datetime.utcnow()
+                    sent_count += 1
+                    
+                except Exception as email_error:
+                    print(f"Failed to send email to {campaign_email.recipient_email}: {str(email_error)}")
+                    campaign_email.status = 'Failed'
+                    campaign_email.error_message = str(email_error)
+                    failed_count += 1
+            
+            # Update campaign with final counts
+            campaign.sent_count = sent_count
+            campaign.failed_count = failed_count
+            campaign.status = 'Sent' if failed_count == 0 else 'Failed'
+            campaign.sent_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            return jsonify({
+                'message': 'Campaign sent successfully',
+                'sentCount': sent_count,
+                'failedCount': failed_count,
+                'totalRecipients': campaign.total_recipients,
+                'campaign': campaign.to_dict()
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error sending campaign: {str(e)}")
+            # Update campaign status to failed
+            try:
+                campaign.status = 'Failed'
+                db.session.commit()
+            except:
+                pass
+            return jsonify({'error': 'Failed to send campaign', 'details': str(e)}), 500
+    
+    @app.route('/api/salesman/campaigns/<int:campaign_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_campaign(campaign_id):
+        """Delete a campaign"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'sub':
+                return jsonify({'error': 'Unauthorized. Sub-user access only.'}), 403
+            
+            campaign = Campaign.query.filter_by(id=campaign_id, salesman_id=current_user_id).first()
+            
+            if not campaign:
+                return jsonify({'error': 'Campaign not found'}), 404
+            
+            # Delete campaign (cascade will delete associated emails)
+            db.session.delete(campaign)
+            db.session.commit()
+            
+            return jsonify({'message': 'Campaign deleted successfully'}), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error deleting campaign: {str(e)}")
+            return jsonify({'error': 'Failed to delete campaign', 'details': str(e)}), 500
+
+    # ==================== MAIN USER CAMPAIGN MANAGEMENT ENDPOINTS ====================
+    
+    @app.route('/api/campaigns', methods=['GET'])
+    @jwt_required()
+    def get_all_campaigns():
+        """Get all campaigns from all sub-users for the main user"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'main':
+                return jsonify({'error': 'Unauthorized. Main user access only.'}), 403
+            
+            # Get all sub-users (salesmen) belonging to this main user
+            sub_users = User.query.filter_by(main_user_id=current_user_id, user_type='sub').all()
+            sub_user_ids = [sub_user.id for sub_user in sub_users]
+            
+            # Get all campaigns from these sub-users
+            if sub_user_ids:
+                campaigns = Campaign.query.filter(Campaign.salesman_id.in_(sub_user_ids)).order_by(Campaign.created_at.desc()).all()
+            else:
+                campaigns = []
+            
+            return jsonify({
+                'campaigns': [campaign.to_dict() for campaign in campaigns]
+            }), 200
+            
+        except Exception as e:
+            print(f"Error fetching all campaigns: {str(e)}")
+            return jsonify({'error': 'Failed to fetch campaigns', 'details': str(e)}), 500
+    
+    @app.route('/api/campaigns/<int:campaign_id>', methods=['GET'])
+    @jwt_required()
+    def get_campaign_details_main(campaign_id):
+        """Get detailed information about a specific campaign for main user"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'main':
+                return jsonify({'error': 'Unauthorized. Main user access only.'}), 403
+            
+            # Get campaign and verify it belongs to one of the main user's sub-users
+            campaign = Campaign.query.get(campaign_id)
+            
+            if not campaign:
+                return jsonify({'error': 'Campaign not found'}), 404
+            
+            # Verify the campaign belongs to a sub-user of this main user
+            sub_user = User.query.filter_by(id=campaign.salesman_id, main_user_id=current_user_id).first()
+            if not sub_user:
+                return jsonify({'error': 'Unauthorized to view this campaign'}), 403
+            
+            # Get all emails for this campaign
+            emails = CampaignEmail.query.filter_by(campaign_id=campaign_id).order_by(CampaignEmail.created_at.desc()).all()
+            
+            campaign_data = campaign.to_dict()
+            campaign_data['emails'] = [email.to_dict() for email in emails]
+            
+            return jsonify(campaign_data), 200
+            
+        except Exception as e:
+            print(f"Error fetching campaign details: {str(e)}")
+            return jsonify({'error': 'Failed to fetch campaign details', 'details': str(e)}), 500
+    
+    @app.route('/api/campaigns/<int:campaign_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_campaign_main(campaign_id):
+        """Delete a campaign (main user)"""
+        try:
+            current_user_id = get_jwt_identity()
+            user = User.query.get(current_user_id)
+            
+            if not user or user.user_type != 'main':
+                return jsonify({'error': 'Unauthorized. Main user access only.'}), 403
+            
+            # Get campaign and verify it belongs to one of the main user's sub-users
+            campaign = Campaign.query.get(campaign_id)
+            
+            if not campaign:
+                return jsonify({'error': 'Campaign not found'}), 404
+            
+            # Verify the campaign belongs to a sub-user of this main user
+            sub_user = User.query.filter_by(id=campaign.salesman_id, main_user_id=current_user_id).first()
+            if not sub_user:
+                return jsonify({'error': 'Unauthorized to delete this campaign'}), 403
+            
+            # Delete campaign (cascade will delete associated emails)
+            db.session.delete(campaign)
+            db.session.commit()
+            
+            return jsonify({'message': 'Campaign deleted successfully'}), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error deleting campaign: {str(e)}")
+            return jsonify({'error': 'Failed to delete campaign', 'details': str(e)}), 500
 
     # Error handlers
     @app.errorhandler(400)

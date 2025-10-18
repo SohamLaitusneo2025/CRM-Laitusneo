@@ -8,6 +8,7 @@ import SubUserLeadManagement from './LeadManagement';
 import SubUserTaskManagement from './TaskManagement';
 import SubUserMeetingManagement from './MeetingManagement';
 import SubUserPitchDeck from './PitchDeck';
+import SubUserCampaignManagement from './CampaignManagement';
 import './SubUserApp.css';
 
 const SubUserApp = () => {
@@ -24,6 +25,7 @@ const SubUserApp = () => {
     if (path === '/sub-user/lead-management') return 'lead-management';
     if (path === '/sub-user/meeting-management') return 'meeting-management';
     if (path === '/sub-user/pitch-deck') return 'pitch-deck';
+    if (path === '/sub-user/campaigns') return 'campaigns';
     return 'dashboard';
   };
 
@@ -52,6 +54,8 @@ const SubUserApp = () => {
         return <SubUserMeetingManagement />;
       case 'pitch-deck':
         return <SubUserPitchDeck />;
+      case 'campaigns':
+        return <SubUserCampaignManagement />;
       default:
         return <SubUserDashboard />;
     }

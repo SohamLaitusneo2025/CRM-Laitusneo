@@ -283,14 +283,19 @@ class Meeting(db.Model):
     __tablename__ = 'meetings'
     
     id = db.Column(db.Integer, primary_key=True)
-    type = db.Column(db.Enum('offline', 'online'), nullable=False)
+    type = db.Column(db.Enum('offline', 'online', 'google-meet'), nullable=False)
     client_name = db.Column(db.String(100), nullable=False)
     mobile_number = db.Column(db.String(20), nullable=False)
     email = db.Column(db.String(120), nullable=False)
     date = db.Column(db.Date, nullable=False)
     time = db.Column(db.Time, nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    product_name = db.Column(db.String(200), nullable=True)
     venue = db.Column(db.String(200), nullable=True)
     platform = db.Column(db.String(50), nullable=True)
+    meeting_link = db.Column(db.String(500), nullable=True)  # For online meetings
+    google_maps_link = db.Column(db.String(500), nullable=True)  # For offline meetings
+    message = db.Column(db.Text, nullable=True)  # Personal message for client
     status = db.Column(db.Enum('Scheduled', 'Completed', 'Cancelled', 'Postponed'), default='Scheduled', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -298,16 +303,22 @@ class Meeting(db.Model):
     # Foreign key to the user who created the meeting
     salesman_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     salesman = db.relationship('User', backref='meetings')
+    product = db.relationship('Product', backref='meetings')
 
-    def __init__(self, type, client_name, mobile_number, email, date, time, venue=None, platform=None, status='Scheduled', salesman_id=None):
+    def __init__(self, type, client_name, mobile_number, email, date, time, product_id=None, product_name=None, venue=None, platform=None, meeting_link=None, google_maps_link=None, message=None, status='Scheduled', salesman_id=None):
         self.type = type
         self.client_name = client_name
         self.mobile_number = mobile_number
         self.email = email
         self.date = date
         self.time = time
+        self.product_id = product_id
+        self.product_name = product_name
         self.venue = venue
         self.platform = platform
+        self.meeting_link = meeting_link
+        self.google_maps_link = google_maps_link
+        self.message = message
         self.status = status
         self.salesman_id = salesman_id
 
@@ -321,8 +332,13 @@ class Meeting(db.Model):
             'email': self.email,
             'date': self.date.isoformat() if self.date else None,
             'time': self.time.strftime('%H:%M') if self.time else None,
+            'productId': self.product_id,
+            'productName': self.product_name,
             'venue': self.venue,
             'platform': self.platform,
+            'meetingLink': self.meeting_link,
+            'googleMapsLink': self.google_maps_link,
+            'message': self.message,
             'status': self.status,
             'createdAt': self.created_at.isoformat() if self.created_at else None,
             'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
@@ -332,3 +348,84 @@ class Meeting(db.Model):
     
     def __repr__(self):
         return f'<Meeting {self.id}: {self.client_name} - {self.date} {self.time}>'
+
+
+class Campaign(db.Model):
+    __tablename__ = 'campaigns'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_name = db.Column(db.String(200), nullable=False)
+    subject = db.Column(db.String(300), nullable=False)
+    email_body = db.Column(db.Text, nullable=False)
+    status = db.Column(db.Enum('Draft', 'Sending', 'Sent', 'Failed'), default='Draft', nullable=False)
+    total_recipients = db.Column(db.Integer, default=0)
+    sent_count = db.Column(db.Integer, default=0)
+    failed_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Foreign key to sub-user who created the campaign
+    salesman_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    
+    # Relationship to user
+    salesman = db.relationship('User', backref=db.backref('campaigns', lazy=True))
+    
+    def to_dict(self):
+        """Convert campaign object to dictionary"""
+        # Generate campaign_id like C001, C002, etc.
+        campaign_id = f"C{self.id:03d}"
+        
+        return {
+            'id': self.id,
+            'campaignId': campaign_id,
+            'campaignName': self.campaign_name,
+            'subject': self.subject,
+            'emailBody': self.email_body,
+            'status': self.status,
+            'totalRecipients': self.total_recipients,
+            'sentCount': self.sent_count,
+            'failedCount': self.failed_count,
+            'createdAt': self.created_at.isoformat() if self.created_at else None,
+            'sentAt': self.sent_at.isoformat() if self.sent_at else None,
+            'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
+            'salesman_id': self.salesman_id,
+            'salesman_name': f"{self.salesman.first_name} {self.salesman.last_name}" if self.salesman else None
+        }
+    
+    def __repr__(self):
+        return f'<Campaign {self.id}: {self.campaign_name}>'
+
+
+class CampaignEmail(db.Model):
+    __tablename__ = 'campaign_emails'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey('campaigns.id'), nullable=False)
+    recipient_email = db.Column(db.String(120), nullable=False)
+    recipient_name = db.Column(db.String(100), nullable=True)
+    status = db.Column(db.Enum('Pending', 'Sent', 'Failed', 'Bounced'), default='Pending', nullable=False)
+    error_message = db.Column(db.Text, nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    opened_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationship to campaign
+    campaign = db.relationship('Campaign', backref=db.backref('emails', lazy=True, cascade='all, delete-orphan'))
+    
+    def to_dict(self):
+        """Convert campaign email object to dictionary"""
+        return {
+            'id': self.id,
+            'campaign_id': self.campaign_id,
+            'recipientEmail': self.recipient_email,
+            'recipientName': self.recipient_name,
+            'status': self.status,
+            'errorMessage': self.error_message,
+            'sentAt': self.sent_at.isoformat() if self.sent_at else None,
+            'openedAt': self.opened_at.isoformat() if self.opened_at else None,
+            'createdAt': self.created_at.isoformat() if self.created_at else None
+        }
+    
+    def __repr__(self):
+        return f'<CampaignEmail {self.id}: {self.recipient_email}>'

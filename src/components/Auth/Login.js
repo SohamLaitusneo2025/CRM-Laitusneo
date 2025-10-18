@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
-import { Eye, EyeOff, Mail, Lock, User, UserCheck } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, UserCheck, X } from 'lucide-react';
 import logo from '../../Assets/logo2.png';
 import './Auth.css';
 
@@ -20,6 +20,20 @@ const Login = () => {
     const { login } = useAuth();
     const { showSuccess } = useNotification();
     const navigate = useNavigate();
+
+    // Auto-dismiss error popup after 5 seconds
+    useEffect(() => {
+        if (error) {
+            const timer = setTimeout(() => {
+                setError('');
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [error]);
+
+    const handleCloseError = () => {
+        setError('');
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -76,8 +90,16 @@ const Login = () => {
 
                 <form onSubmit={handleSubmit} className="auth-form">
                     {error && (
-                        <div className="error-message">
-                            {error}
+                        <div className="error-message" role="alert">
+                            <span>{error}</span>
+                            <button 
+                                type="button" 
+                                className="close-btn" 
+                                onClick={handleCloseError}
+                                aria-label="Close error message"
+                            >
+                                <X size={12} />
+                            </button>
                         </div>
                     )}
 

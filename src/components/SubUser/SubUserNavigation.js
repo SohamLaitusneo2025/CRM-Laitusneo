@@ -5,6 +5,7 @@ import {
   CheckSquare, 
   Calendar, 
   FileText,
+  Mail,
   ArrowRight
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -22,6 +23,7 @@ const SubUserNavigation = ({ activeTab, setActiveTab }) => {
     { id: 'task-management', label: 'Tasks', icon: CheckSquare, path: '/sub-user/task-management' },
     { id: 'lead-management', label: 'Leads', icon: Users, path: '/sub-user/lead-management' },
     { id: 'meeting-management', label: 'Meetings', icon: Calendar, path: '/sub-user/meeting-management' },
+    { id: 'campaigns', label: 'Campaigns', icon: Mail, path: '/sub-user/campaigns' },
     { id: 'pitch-deck', label: 'Sales Deck', icon: FileText, path: '/sub-user/pitch-deck' }
   ];
 

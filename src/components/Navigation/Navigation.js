@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Users, Package, UserCheck, ArrowRight } from 'lucide-react';
+import { Home, Users, Package, UserCheck, Mail, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import './Navigation.css';
 import logo from '../../Assets/logo.png'
@@ -12,8 +12,9 @@ const Navigation = () => {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Home, active: true },
     { path: '/salesman', label: 'Salesman Management', icon: Users, active: true },
-    { path: '/products', label: 'Product Management', icon: Package, active: true },
     { path: '/leads', label: 'Lead Management', icon: UserCheck, active: true},
+    { path: '/products', label: 'Product Management', icon: Package, active: true },
+    { path: '/campaigns', label: 'Campaigns', icon: Mail, active: true },
   ];
 
   return (

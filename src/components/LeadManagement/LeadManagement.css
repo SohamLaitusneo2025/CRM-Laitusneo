@@ -384,7 +384,7 @@
 .action-buttons {
   display: flex;
   gap: 3px;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   flex-wrap: nowrap;
   width: 100%;

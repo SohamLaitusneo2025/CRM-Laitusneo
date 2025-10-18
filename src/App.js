@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard/Dashboard';
 import SalesmanManagement from './components/SalesmanManagement/SalesmanManagement';
 import ProductManagement from './components/ProductManagement/ProductManagement';
 import LeadManagement from './components/LeadManagement/LeadManagement';
+import CampaignManagement from './components/CampaignManagement';
 import Login from './components/Auth/Login';
 import Signup from './components/Auth/Signup';
 import SubUserApp from './components/SubUser/SubUserApp';
@@ -81,6 +82,11 @@ function AppContent() {
               <SubUserApp />
             </SubUserProtectedRoute>
           } />
+          <Route path="/sub-user/campaigns" element={
+            <SubUserProtectedRoute>
+              <SubUserApp />
+            </SubUserProtectedRoute>
+          } />
           
           {/* Main User Protected Routes */}
           <Route path="/" element={
@@ -136,6 +142,11 @@ function AppContent() {
           <Route path="/leads" element={
             <ProtectedRoute>
               <LeadManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="/campaigns" element={
+            <ProtectedRoute>
+              <CampaignManagement />
             </ProtectedRoute>
           } />
           

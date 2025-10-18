@@ -32,9 +32,10 @@ const SalesmanManagement = () => {
       const response = await axios.get(`${API_BASE}/salesmen`, { headers: authHeaders });
       const salesmen = response.data?.salesmen || [];
       
-      const totalCount = salesmen.length;
+      // Count active and inactive salesmen (exclude deleted users)
       const activeCount = salesmen.filter(s => s.is_active).length;
-      const inactiveCount = totalCount - activeCount;
+      const inactiveCount = salesmen.filter(s => !s.is_active).length;
+      const totalCount = salesmen.length;
       
       setMetrics({
         totalSalesman: { count: totalCount, change: 0, trend: 'up' },

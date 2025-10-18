@@ -18,16 +18,27 @@ class DataService {
   // Helper methods for API calls
   async apiGet(endpoint) {
     const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in again.');
+    }
+    
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
+        'Authorization': `Bearer ${token}`
       },
     });
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        // Clear invalid token and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('jwt');
+        window.location.href = '/login';
+      }
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }
     
@@ -36,17 +47,28 @@ class DataService {
 
   async apiPost(endpoint, data) {
     const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in again.');
+    }
+    
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify(data),
     });
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        // Clear invalid token and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('jwt');
+        window.location.href = '/login';
+      }
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }
     
@@ -55,17 +77,28 @@ class DataService {
 
   async apiPut(endpoint, data) {
     const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in again.');
+    }
+    
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify(data),
     });
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        // Clear invalid token and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('jwt');
+        window.location.href = '/login';
+      }
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }
     
@@ -74,17 +107,28 @@ class DataService {
 
   async apiPatch(endpoint, data) {
     const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in again.');
+    }
+    
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify(data),
     });
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        // Clear invalid token and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('jwt');
+        window.location.href = '/login';
+      }
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }
     
@@ -93,16 +137,27 @@ class DataService {
 
   async apiDelete(endpoint) {
     const token = this.getAuthToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in again.');
+    }
+    
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : undefined
+        'Authorization': `Bearer ${token}`
       },
     });
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        // Clear invalid token and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token');
+        localStorage.removeItem('jwt');
+        window.location.href = '/login';
+      }
       throw new Error(error.error || `HTTP error! status: ${response.status}`);
     }
     
@@ -524,6 +579,38 @@ class DataService {
       return response;
     } catch (error) {
       console.error('Error updating meeting status:', error);
+      throw error;
+    }
+  }
+
+  // Google Meet Integration methods
+  async createGoogleMeetMeeting(meetingData) {
+    try {
+      const response = await this.apiPost('/meetings/google-meet', meetingData);
+      return response;
+    } catch (error) {
+      console.error('Error creating Google Meet meeting:', error);
+      throw error;
+    }
+  }
+
+  async sendMeetingInvitation(meetingData) {
+    try {
+      const response = await this.apiPost('/meetings/send-invitation', meetingData);
+      return response;
+    } catch (error) {
+      console.error('Error sending meeting invitation:', error);
+      throw error;
+    }
+  }
+
+  // Get products for meeting form
+  async getProductsForMeeting() {
+    try {
+      const response = await this.apiGet('/products');
+      return response.products || [];
+    } catch (error) {
+      console.error('Error fetching products for meeting:', error);
       throw error;
     }
   }

@@ -103,7 +103,16 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true, user: userData };
     } catch (error) {
-      const message = error.response?.data?.error || 'Login failed';
+      let message = 'Login failed';
+      
+      if (error.response?.status === 401) {
+        message = 'Invalid credentials. Please check your email/username and password.';
+      } else if (error.response?.data?.error) {
+        message = error.response.data.error;
+      } else if (error.message === 'Network Error') {
+        message = 'Unable to connect to server. Please check your internet connection.';
+      }
+      
       return { success: false, error: message };
     }
   };

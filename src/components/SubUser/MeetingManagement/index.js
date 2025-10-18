@@ -12,9 +12,14 @@ import {
   XCircle,
   AlertCircle,
   Edit,
-  Trash2
+  Trash2,
+  Package,
+  Send,
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import dataService from '../../../services/dataService';
+import googleMeetService from '../../../services/googleMeetService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import './MeetingManagement.css';
 
@@ -27,37 +32,50 @@ const SubUserMeetingManagement = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [newMeeting, setNewMeeting] = useState({
-    type: 'offline',
+    type: 'google-meet',
     clientName: '',
     mobileNumber: '',
     email: '',
     date: '',
     time: '',
+    productId: '',
+    productName: '',
     venue: '',
     platform: '',
-    status: 'Scheduled'
+    meetingLink: '',
+    googleMapsLink: '',
+    status: 'Scheduled',
+    message: ''
   });
   const [formErrors, setFormErrors] = useState({});
+  const [products, setProducts] = useState([]);
+  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
 
   // Reset form to default values
   const resetForm = () => {
     setNewMeeting({
-      type: 'offline',
+      type: 'google-meet',
       clientName: '',
       mobileNumber: '',
       email: '',
       date: '',
       time: '',
+      productId: '',
+      productName: '',
       venue: '',
       platform: '',
-      status: 'Scheduled'
+      meetingLink: '',
+      googleMapsLink: '',
+      status: 'Scheduled',
+      message: ''
     });
     setFormErrors({});
   };
 
-  // Load meetings from API
+  // Load meetings and products from API
   useEffect(() => {
     loadMeetings();
+    loadProducts();
   }, []);
 
   const loadMeetings = async () => {
@@ -73,8 +91,20 @@ const SubUserMeetingManagement = () => {
     }
   };
 
+  const loadProducts = async () => {
+    try {
+      const productsData = await dataService.getProductsForMeeting();
+      setProducts(productsData);
+    } catch (err) {
+      console.error('Error loading products:', err);
+      showError('Failed to load products. Please try again.');
+    }
+  };
+
   const getTypeIcon = (type) => {
-    return type === 'online' ? Video : MapPin;
+    if (type === 'google-meet') return Video;
+    if (type === 'online') return Video;
+    return MapPin;
   };
 
   const getStatusColor = (status) => {
@@ -103,6 +133,7 @@ const SubUserMeetingManagement = () => {
     }
     if (activeTab === 'offline') return meeting.type === 'offline' && meeting.status !== 'Completed';
     if (activeTab === 'online') return meeting.type === 'online' && meeting.status !== 'Completed';
+    if (activeTab === 'google-meet') return meeting.type === 'google-meet' && meeting.status !== 'Completed';
     return meeting.status.toLowerCase() === activeTab;
   });
 
@@ -131,6 +162,10 @@ const SubUserMeetingManagement = () => {
       errors.time = 'Time is required';
     }
 
+    if (!newMeeting.productId) {
+      errors.productId = 'Product selection is required';
+    }
+
     if (newMeeting.type === 'offline' && !newMeeting.venue.trim()) {
       errors.venue = 'Venue is required for offline meetings';
     }
@@ -139,25 +174,95 @@ const SubUserMeetingManagement = () => {
       errors.platform = 'Platform is required for online meetings';
     }
 
+    if (newMeeting.type === 'online' && !newMeeting.meetingLink.trim()) {
+      errors.meetingLink = 'Meeting link is required for online meetings';
+    }
+
+    // Validate meeting link for online meetings
+    if (newMeeting.type === 'online' && newMeeting.meetingLink.trim()) {
+      const urlPattern = /^https?:\/\/.+/;
+      if (!urlPattern.test(newMeeting.meetingLink.trim())) {
+        errors.meetingLink = 'Please enter a valid meeting link (must start with http:// or https://)';
+      }
+    }
+
+    // Validate Google Maps link for offline meetings
+    if (newMeeting.type === 'offline' && newMeeting.googleMapsLink.trim()) {
+      const urlPattern = /^https?:\/\/.+/;
+      if (!urlPattern.test(newMeeting.googleMapsLink.trim())) {
+        errors.googleMapsLink = 'Please enter a valid Google Maps link (must start with http:// or https://)';
+      }
+    }
+
     return errors;
   };
 
   const handleAddMeeting = async (e) => {
     e.preventDefault();
     
+    console.log('Form submitted with data:', newMeeting);
+    
     const errors = validateForm();
+    console.log('Validation errors:', errors);
     setFormErrors(errors);
 
     if (Object.keys(errors).length === 0) {
       try {
-        const response = await dataService.addMeeting(newMeeting);
+        setIsCreatingMeeting(true);
+        
+        let meetingData = { ...newMeeting };
+        
+        // If it's a Google Meet meeting, create the meeting and get the link
+        if (newMeeting.type === 'google-meet') {
+          try {
+            console.log('Creating Google Meet meeting...');
+            console.log('Meeting data:', newMeeting);
+            const googleMeetResponse = await dataService.createGoogleMeetMeeting(newMeeting);
+            console.log('Google Meet response:', googleMeetResponse);
+            meetingData.meetingLink = googleMeetResponse.meetingLink;
+            meetingData.platform = 'Google Meet';
+            console.log('Generated meeting link:', meetingData.meetingLink);
+          } catch (googleMeetError) {
+            console.warn('Google Meet creation failed, using fallback:', googleMeetError);
+            // Fallback to generating a Google Meet link
+            meetingData.meetingLink = googleMeetService.generateGoogleMeetLink();
+            meetingData.platform = 'Google Meet';
+            console.log('Fallback meeting link:', meetingData.meetingLink);
+          }
+        } else if (newMeeting.type === 'online') {
+          // For other online meetings, ensure platform is set
+          meetingData.platform = newMeeting.platform;
+        }
+
+        // Create the meeting in our database
+        const response = await dataService.addMeeting(meetingData);
+        
+        // Send email invitation
+        try {
+          console.log('Sending meeting invitation email...');
+          const emailData = {
+            ...meetingData,
+            meetingId: response.meeting.id,
+            meetingLink: meetingData.meetingLink
+          };
+          console.log('Email data:', emailData);
+          const emailResponse = await dataService.sendMeetingInvitation(emailData);
+          console.log('Email response:', emailResponse);
+          
+          showSuccess('Meeting scheduled and invitation sent successfully!');
+        } catch (emailError) {
+          console.warn('Email sending failed:', emailError);
+          showSuccess('Meeting scheduled successfully! (Email invitation could not be sent)');
+        }
+        
         setMeetings([response.meeting, ...meetings]);
         resetForm();
         setShowAddModal(false);
-        showSuccess('Meeting scheduled successfully!');
       } catch (err) {
         console.error('Error adding meeting:', err);
         showError('Failed to schedule meeting. Please try again.');
+      } finally {
+        setIsCreatingMeeting(false);
       }
     }
   };
@@ -176,7 +281,28 @@ const SubUserMeetingManagement = () => {
 
     if (Object.keys(errors).length === 0) {
       try {
-        const response = await dataService.updateMeeting(editingMeeting.id, newMeeting);
+        let meetingData = { ...newMeeting };
+        
+        // If it's a Google Meet meeting and doesn't have a link, generate one
+        if (newMeeting.type === 'google-meet' && !newMeeting.meetingLink) {
+          try {
+            const googleMeetResponse = await dataService.createGoogleMeetMeeting(newMeeting);
+            meetingData.meetingLink = googleMeetResponse.meetingLink;
+            meetingData.platform = 'Google Meet';
+          } catch (googleMeetError) {
+            console.warn('Google Meet creation failed, using fallback:', googleMeetError);
+            meetingData.meetingLink = googleMeetService.generateGoogleMeetLink();
+            meetingData.platform = 'Google Meet';
+          }
+        } else if (newMeeting.type === 'google-meet') {
+          // Keep existing Google Meet link but ensure platform is set
+          meetingData.platform = 'Google Meet';
+        } else if (newMeeting.type === 'online') {
+          // For other online meetings, ensure platform is set
+          meetingData.platform = newMeeting.platform;
+        }
+
+        const response = await dataService.updateMeeting(editingMeeting.id, meetingData);
         setMeetings(meetings.map(meeting => 
           meeting.id === editingMeeting.id 
             ? response.meeting
@@ -184,14 +310,19 @@ const SubUserMeetingManagement = () => {
         ));
         setEditingMeeting(null);
         setNewMeeting({
-          type: 'offline',
+          type: 'google-meet',
           clientName: '',
           mobileNumber: '',
           email: '',
           date: '',
           time: '',
+          productId: '',
+          productName: '',
           venue: '',
           platform: '',
+          meetingLink: '',
+          googleMapsLink: '',
+          message: '',
           status: 'Scheduled'
         });
         setFormErrors({});
@@ -232,11 +363,22 @@ const SubUserMeetingManagement = () => {
     }
   };
 
+
   const handleInputChange = (field, value) => {
     setNewMeeting(prev => ({
       ...prev,
       [field]: value
     }));
+    
+    // Handle product selection
+    if (field === 'productId') {
+      const selectedProduct = products.find(p => p.id.toString() === value);
+      setNewMeeting(prev => ({
+        ...prev,
+        productId: value,
+        productName: selectedProduct ? selectedProduct.name : ''
+      }));
+    }
     
     // Clear error when user starts typing
     if (formErrors[field]) {
@@ -291,6 +433,13 @@ const SubUserMeetingManagement = () => {
           All Meetings
         </button>
         <button 
+          className={`tab-btn ${activeTab === 'google-meet' ? 'active' : ''}`}
+          onClick={() => setActiveTab('google-meet')}
+        >
+          <Video size={16} />
+          Google Meet
+        </button>
+        <button 
           className={`tab-btn ${activeTab === 'offline' ? 'active' : ''}`}
           onClick={() => setActiveTab('offline')}
         >
@@ -302,7 +451,7 @@ const SubUserMeetingManagement = () => {
           onClick={() => setActiveTab('online')}
         >
           <Video size={16} />
-          Online Meetings
+          Other Online
         </button>
         <button 
           className={`tab-btn ${activeTab === 'scheduled' ? 'active' : ''}`}
@@ -336,7 +485,8 @@ const SubUserMeetingManagement = () => {
                   <div className="meeting-type">
                     <TypeIcon size={20} />
                     <span className="type-label">
-                      {meeting.type === 'offline' ? 'Offline Meeting' : 'Online Meeting'}
+                      {meeting.type === 'google-meet' ? 'Google Meet' : 
+                       meeting.type === 'offline' ? 'Offline Meeting' : 'Online Meeting'}
                     </span>
                   </div>
                   <div className="meeting-actions-header">
@@ -378,6 +528,12 @@ const SubUserMeetingManagement = () => {
                         <Mail size={14} />
                         <span>{meeting.email}</span>
                       </div>
+                      {meeting.productName && (
+                        <div className="contact-item">
+                          <Package size={14} />
+                          <span>{meeting.productName}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -408,6 +564,39 @@ const SubUserMeetingManagement = () => {
                         )}
                       </div>
                     </div>
+                    
+                    {/* Display meeting links */}
+                    {(meeting.type === 'online' || meeting.type === 'google-meet') && meeting.meetingLink && (
+                      <div className="detail-row">
+                        <div className="detail-item link-item">
+                          <Video size={16} />
+                          <a 
+                            href={meeting.meetingLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="meeting-link"
+                          >
+                            {meeting.type === 'google-meet' ? 'Join Google Meet' : 'Join Meeting'}
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {meeting.type === 'offline' && meeting.googleMapsLink && (
+                      <div className="detail-row">
+                        <div className="detail-item link-item">
+                          <MapPin size={16} />
+                          <a 
+                            href={meeting.googleMapsLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="meeting-link"
+                          >
+                            View on Maps
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                 </div>
@@ -492,8 +681,9 @@ const SubUserMeetingManagement = () => {
                     value={newMeeting.type}
                     onChange={(e) => handleInputChange('type', e.target.value)}
                   >
+                    <option value="google-meet">Google Meet (Recommended)</option>
                     <option value="offline">Offline Meeting</option>
-                    <option value="online">Online Meeting</option>
+                    <option value="online">Other Online Meeting</option>
                   </select>
                 </div>
 
@@ -533,6 +723,23 @@ const SubUserMeetingManagement = () => {
                   {formErrors.email && <span className="error-message">{formErrors.email}</span>}
                 </div>
 
+                <div className="form-group">
+                  <label>Product Selection *</label>
+                  <select 
+                    value={newMeeting.productId}
+                    onChange={(e) => handleInputChange('productId', e.target.value)}
+                    className={formErrors.productId ? 'error' : ''}
+                  >
+                    <option value="">Select a product to discuss</option>
+                    {products.map(product => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.productId && <span className="error-message">{formErrors.productId}</span>}
+                </div>
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Date *</label>
@@ -558,47 +765,114 @@ const SubUserMeetingManagement = () => {
                 </div>
 
                 {newMeeting.type === 'offline' ? (
+                  <>
+                    <div className="form-group">
+                      <label>Venue *</label>
+                      <input 
+                        type="text" 
+                        value={newMeeting.venue}
+                        onChange={(e) => handleInputChange('venue', e.target.value)}
+                        placeholder="Enter meeting venue"
+                        className={formErrors.venue ? 'error' : ''}
+                      />
+                      {formErrors.venue && <span className="error-message">{formErrors.venue}</span>}
+                    </div>
+                    <div className="form-group">
+                      <label>Google Maps Link</label>
+                      <input 
+                        type="url" 
+                        value={newMeeting.googleMapsLink}
+                        onChange={(e) => handleInputChange('googleMapsLink', e.target.value)}
+                        placeholder="https://maps.google.com/..."
+                        className={formErrors.googleMapsLink ? 'error' : ''}
+                      />
+                      {formErrors.googleMapsLink && <span className="error-message">{formErrors.googleMapsLink}</span>}
+                    </div>
+                  </>
+                ) : newMeeting.type === 'google-meet' ? (
                   <div className="form-group">
-                    <label>Venue *</label>
-                    <input 
-                      type="text" 
-                      value={newMeeting.venue}
-                      onChange={(e) => handleInputChange('venue', e.target.value)}
-                      placeholder="Enter meeting venue"
-                      className={formErrors.venue ? 'error' : ''}
-                    />
-                    {formErrors.venue && <span className="error-message">{formErrors.venue}</span>}
+                    <div className="google-meet-info">
+                      <div className="info-icon">
+                        <Video size={20} />
+                      </div>
+                      <div className="info-content">
+                        <h4>Google Meet Link</h4>
+                        <p>A Google Meet link will be automatically generated and sent to the client's email when you schedule this meeting.</p>
+                        <div className="auto-generated-badge">
+                          <CheckCircle size={16} />
+                          <span>Auto-generated</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <div className="form-group">
-                    <label>Platform *</label>
-                    <select 
-                      value={newMeeting.platform}
-                      onChange={(e) => handleInputChange('platform', e.target.value)}
-                      className={formErrors.platform ? 'error' : ''}
-                    >
-                      <option value="">Select platform</option>
-                      <option value="Microsoft Teams">Microsoft Teams</option>
-                      <option value="Google Meet">Google Meet</option>
-                      <option value="Zoom">Zoom</option>
-                      <option value="Skype">Skype</option>
-                      <option value="WebEx">WebEx</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    {formErrors.platform && <span className="error-message">{formErrors.platform}</span>}
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label>Platform *</label>
+                      <select 
+                        value={newMeeting.platform}
+                        onChange={(e) => handleInputChange('platform', e.target.value)}
+                        className={formErrors.platform ? 'error' : ''}
+                      >
+                        <option value="">Select platform</option>
+                        <option value="Microsoft Teams">Microsoft Teams</option>
+                        <option value="Zoom">Zoom</option>
+                        <option value="Skype">Skype</option>
+                        <option value="WebEx">WebEx</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {formErrors.platform && <span className="error-message">{formErrors.platform}</span>}
+                    </div>
+                    <div className="form-group">
+                      <label>Meeting Link *</label>
+                      <input 
+                        type="url" 
+                        value={newMeeting.meetingLink}
+                        onChange={(e) => handleInputChange('meetingLink', e.target.value)}
+                        placeholder="https://teams.microsoft.com/... or https://zoom.us/..."
+                        className={formErrors.meetingLink ? 'error' : ''}
+                      />
+                      {formErrors.meetingLink && <span className="error-message">{formErrors.meetingLink}</span>}
+                    </div>
+                  </>
                 )}
+
+                <div className="form-group">
+                  <label>Meeting Message (Optional)</label>
+                  <textarea 
+                    value={newMeeting.message}
+                    onChange={(e) => handleInputChange('message', e.target.value)}
+                    placeholder="Add a personal message for the client..."
+                    rows="3"
+                    className="form-textarea"
+                  />
+                </div>
 
                 <div className="modal-actions">
                   <button 
                     type="button" 
                     className="btn-secondary"
                     onClick={() => setShowAddModal(false)}
+                    disabled={isCreatingMeeting}
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="btn-primary">
-                    Schedule Meeting
+                  <button 
+                    type="submit" 
+                    className="btn-primary"
+                    disabled={isCreatingMeeting}
+                  >
+                    {isCreatingMeeting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Creating Meeting...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={16} />
+                        Schedule & Send Invitation
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
@@ -628,8 +902,9 @@ const SubUserMeetingManagement = () => {
                     value={newMeeting.type}
                     onChange={(e) => handleInputChange('type', e.target.value)}
                   >
+                    <option value="google-meet">Google Meet (Recommended)</option>
                     <option value="offline">Offline Meeting</option>
-                    <option value="online">Online Meeting</option>
+                    <option value="online">Other Online Meeting</option>
                   </select>
                 </div>
 
@@ -669,6 +944,23 @@ const SubUserMeetingManagement = () => {
                   {formErrors.email && <span className="error-message">{formErrors.email}</span>}
                 </div>
 
+                <div className="form-group">
+                  <label>Product Selection *</label>
+                  <select 
+                    value={newMeeting.productId}
+                    onChange={(e) => handleInputChange('productId', e.target.value)}
+                    className={formErrors.productId ? 'error' : ''}
+                  >
+                    <option value="">Select a product to discuss</option>
+                    {products.map(product => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.productId && <span className="error-message">{formErrors.productId}</span>}
+                </div>
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Date *</label>
@@ -694,35 +986,80 @@ const SubUserMeetingManagement = () => {
                 </div>
 
                 {newMeeting.type === 'offline' ? (
+                  <>
+                    <div className="form-group">
+                      <label>Venue *</label>
+                      <input 
+                        type="text" 
+                        value={newMeeting.venue}
+                        onChange={(e) => handleInputChange('venue', e.target.value)}
+                        placeholder="Enter meeting venue"
+                        className={formErrors.venue ? 'error' : ''}
+                      />
+                      {formErrors.venue && <span className="error-message">{formErrors.venue}</span>}
+                    </div>
+                    <div className="form-group">
+                      <label>Google Maps Link</label>
+                      <input 
+                        type="url" 
+                        value={newMeeting.googleMapsLink}
+                        onChange={(e) => handleInputChange('googleMapsLink', e.target.value)}
+                        placeholder="https://maps.google.com/..."
+                        className={formErrors.googleMapsLink ? 'error' : ''}
+                      />
+                      {formErrors.googleMapsLink && <span className="error-message">{formErrors.googleMapsLink}</span>}
+                    </div>
+                  </>
+                ) : newMeeting.type === 'google-meet' ? (
                   <div className="form-group">
-                    <label>Venue *</label>
-                    <input 
-                      type="text" 
-                      value={newMeeting.venue}
-                      onChange={(e) => handleInputChange('venue', e.target.value)}
-                      placeholder="Enter meeting venue"
-                      className={formErrors.venue ? 'error' : ''}
-                    />
-                    {formErrors.venue && <span className="error-message">{formErrors.venue}</span>}
+                    <div className="google-meet-info">
+                      <div className="info-icon">
+                        <Video size={20} />
+                      </div>
+                      <div className="info-content">
+                        <h4>Google Meet Link</h4>
+                        <p>This meeting uses an auto-generated Google Meet link. The link will be updated if you change the meeting type.</p>
+                        {newMeeting.meetingLink && (
+                          <div className="current-link">
+                            <strong>Current Link:</strong>
+                            <a href={newMeeting.meetingLink} target="_blank" rel="noopener noreferrer" className="meeting-link">
+                              {newMeeting.meetingLink}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <div className="form-group">
-                    <label>Platform *</label>
-                    <select 
-                      value={newMeeting.platform}
-                      onChange={(e) => handleInputChange('platform', e.target.value)}
-                      className={formErrors.platform ? 'error' : ''}
-                    >
-                      <option value="">Select platform</option>
-                      <option value="Microsoft Teams">Microsoft Teams</option>
-                      <option value="Google Meet">Google Meet</option>
-                      <option value="Zoom">Zoom</option>
-                      <option value="Skype">Skype</option>
-                      <option value="WebEx">WebEx</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    {formErrors.platform && <span className="error-message">{formErrors.platform}</span>}
-                  </div>
+                  <>
+                    <div className="form-group">
+                      <label>Platform *</label>
+                      <select 
+                        value={newMeeting.platform}
+                        onChange={(e) => handleInputChange('platform', e.target.value)}
+                        className={formErrors.platform ? 'error' : ''}
+                      >
+                        <option value="">Select platform</option>
+                        <option value="Microsoft Teams">Microsoft Teams</option>
+                        <option value="Zoom">Zoom</option>
+                        <option value="Skype">Skype</option>
+                        <option value="WebEx">WebEx</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {formErrors.platform && <span className="error-message">{formErrors.platform}</span>}
+                    </div>
+                    <div className="form-group">
+                      <label>Meeting Link *</label>
+                      <input 
+                        type="url" 
+                        value={newMeeting.meetingLink}
+                        onChange={(e) => handleInputChange('meetingLink', e.target.value)}
+                        placeholder="https://teams.microsoft.com/... or https://zoom.us/..."
+                        className={formErrors.meetingLink ? 'error' : ''}
+                      />
+                      {formErrors.meetingLink && <span className="error-message">{formErrors.meetingLink}</span>}
+                    </div>
+                  </>
                 )}
 
                 <div className="form-group">
@@ -755,6 +1092,7 @@ const SubUserMeetingManagement = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

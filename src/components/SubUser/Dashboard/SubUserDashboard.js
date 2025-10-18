@@ -15,6 +15,7 @@ const SubUserDashboard = () => {
     upcomingMeetings: { total: 0, today: 0, thisWeek: 0, change: 0, trend: 'up' },
     performance: { score: 0, target: 100, achievement: 0, change: 0, trend: 'up' }
   });
+  const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Load dashboard data
@@ -32,7 +33,10 @@ const SubUserDashboard = () => {
       ]);
 
       const calculatedMetrics = calculateMetrics(leads, deals, meetings);
+      const generatedChartData = generateChartData(leads, deals, meetings);
+      
       setMetrics(calculatedMetrics);
+      setChartData(generatedChartData);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
       showError('Failed to load dashboard data. Please try again.');
@@ -79,14 +83,51 @@ const SubUserDashboard = () => {
       return meetingDate >= weekStart && meetingDate < weekEnd;
     }).length;
 
+    // Calculate products sold metrics (real data from deals)
+    const wonDeals = deals.filter(deal => deal.status === 'WON');
+    const totalProductsSold = wonDeals.length;
+    
+    // Calculate this month's products sold
+    const thisMonthDeals = wonDeals.filter(deal => {
+      const dealDate = new Date(deal.created_at);
+      return dealDate.getMonth() === currentMonth && dealDate.getFullYear() === currentYear;
+    }).length;
+    
+    // Calculate last month's products sold
+    const lastMonthDeals = wonDeals.filter(deal => {
+      const dealDate = new Date(deal.created_at);
+      return dealDate.getMonth() === lastMonth && dealDate.getFullYear() === lastMonthYear;
+    }).length;
+    
+    // Calculate change percentage
+    const productsSoldChange = lastMonthDeals > 0 ? 
+      Math.round(((thisMonthDeals - lastMonthDeals) / lastMonthDeals) * 100) : 
+      (thisMonthDeals > 0 ? 100 : 0);
+
+    // Calculate performance score (real data)
+    const totalDeals = deals.length;
+    const wonDealsCount = wonDeals.length;
+    const lostDeals = deals.filter(deal => deal.status === 'LOST').length;
+    
+    // Performance calculation: (Won deals / Total deals) * 100
+    // If no deals, performance is 0
+    const performanceScore = totalDeals > 0 ? Math.round((wonDealsCount / totalDeals) * 100) : 0;
+    
+    // Calculate performance change (simplified - could be enhanced with historical data)
+    const performanceChange = performanceScore >= 80 ? 12 : performanceScore >= 60 ? 5 : -2;
+    
+    // Calculate achievement percentage (performance score as percentage of target)
+    const target = 100;
+    const achievement = Math.min(performanceScore, target);
+
     return {
-      // Dummy data for products sold
+      // Real data for products sold
       productsSold: {
-        total: 89,
-        thisMonth: 23,
-        lastMonth: 18,
-        change: 28,
-        trend: 'up'
+        total: totalProductsSold,
+        thisMonth: thisMonthDeals,
+        lastMonth: lastMonthDeals,
+        change: productsSoldChange,
+        trend: productsSoldChange >= 0 ? 'up' : 'down'
       },
       // Real data for leads generated
       leadsGenerated: {
@@ -104,28 +145,76 @@ const SubUserDashboard = () => {
         change: 0, // Could be calculated based on previous periods
         trend: 'up'
       },
-      // Dummy data for performance score
+      // Real data for performance score
       performance: {
-        score: 87,
-        target: 100,
-        achievement: 87,
-        change: 8,
-        trend: 'up'
+        score: performanceScore,
+        target: target,
+        achievement: achievement,
+        change: performanceChange,
+        trend: performanceChange >= 0 ? 'up' : 'down'
       }
     };
   };
 
-  const chartData = [
-    { month: 'Jan', products: 18, leads: 25, meetings: 12 },
-    { month: 'Feb', products: 22, leads: 32, meetings: 15 },
-    { month: 'Mar', products: 28, leads: 38, meetings: 18 },
-    { month: 'Apr', products: 24, leads: 35, meetings: 14 },
-    { month: 'May', products: 32, leads: 45, meetings: 22 },
-    { month: 'Jun', products: 26, leads: 42, meetings: 17 },
-    { month: 'Jul', products: 35, leads: 50, meetings: 20 },
-    { month: 'Aug', products: 38, leads: 55, meetings: 24 },
-    { month: 'Sep', products: 31, leads: 48, meetings: 19 },
-  ];
+  const generateChartData = (leads, deals, meetings) => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    // Generate data for the last 9 months
+    const chartData = [];
+    
+    for (let i = 8; i >= 0; i--) {
+      const targetDate = new Date(currentYear, now.getMonth() - i, 1);
+      const monthIndex = targetDate.getMonth();
+      const monthName = months[monthIndex];
+      
+      // Count products sold (won deals) for this month
+      const monthProducts = deals.filter(deal => {
+        if (deal.status !== 'WON') return false;
+        const dealDate = new Date(deal.created_at);
+        return dealDate.getMonth() === monthIndex && dealDate.getFullYear() === currentYear;
+      }).length;
+      
+      // Count leads generated for this month
+      const monthLeads = leads.filter(lead => {
+        const leadDate = new Date(lead.created_at);
+        return leadDate.getMonth() === monthIndex && leadDate.getFullYear() === currentYear;
+      }).length;
+      
+      // Count meetings scheduled for this month
+      const monthMeetings = meetings.filter(meeting => {
+        if (meeting.status !== 'Scheduled') return false;
+        const meetingDate = new Date(meeting.date);
+        return meetingDate.getMonth() === monthIndex && meetingDate.getFullYear() === currentYear;
+      }).length;
+      
+      chartData.push({
+        month: monthName,
+        products: monthProducts,
+        leads: monthLeads,
+        meetings: monthMeetings
+      });
+    }
+    
+    // If no data exists, return default chart data to prevent empty chart
+    const hasData = chartData.some(data => data.products > 0 || data.leads > 0 || data.meetings > 0);
+    if (!hasData) {
+      return [
+        { month: 'Jan', products: 0, leads: 0, meetings: 0 },
+        { month: 'Feb', products: 0, leads: 0, meetings: 0 },
+        { month: 'Mar', products: 0, leads: 0, meetings: 0 },
+        { month: 'Apr', products: 0, leads: 0, meetings: 0 },
+        { month: 'May', products: 0, leads: 0, meetings: 0 },
+        { month: 'Jun', products: 0, leads: 0, meetings: 0 },
+        { month: 'Jul', products: 0, leads: 0, meetings: 0 },
+        { month: 'Aug', products: 0, leads: 0, meetings: 0 },
+        { month: 'Sep', products: 0, leads: 0, meetings: 0 },
+      ];
+    }
+    
+    return chartData;
+  };
 
   return (
     <div className="sub-user-dashboard" style={{ minHeight: '100vh', background: 'white' }}>

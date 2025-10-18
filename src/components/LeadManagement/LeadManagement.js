@@ -344,13 +344,13 @@ const LeadManagement = () => {
           <p className="dashboard-subtitle">Track and manage your sales leads effectively</p>
           {error && <div className="error-message">{error}</div>}
         </div>
-        <button
+        {/* <button
           className="btn-primary"
           onClick={() => setShowAddModal(true)}
         >
           <Plus size={20} />
           Add New Lead
-        </button>
+        </button> */}
       </div>
 
       {/* Summary Cards */}

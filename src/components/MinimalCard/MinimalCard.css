@@ -1,13 +1,14 @@
 .minimal-card {
   background: white;
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 24px 20px;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
   transition: all 0.2s ease;
   border-left: 4px solid transparent;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
+  min-height: 100px;
 }
 
 .minimal-card:hover {
@@ -16,9 +17,9 @@
 }
 
 .minimal-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -30,20 +31,21 @@
 }
 
 .minimal-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: #6b7280;
-  margin: 0 0 4px 0;
+  margin: 0 0 8px 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  line-height: 1.2;
 }
 
 .minimal-value {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
   color: #111827;
   margin: 0;
-  line-height: 1;
+  line-height: 1.1;
 }
 
 /* Color themes */
@@ -77,15 +79,21 @@
 /* Responsive design */
 @media (max-width: 768px) {
   .minimal-card {
-    padding: 12px;
+    padding: 20px 16px;
+    min-height: 90px;
   }
   
   .minimal-value {
-    font-size: 18px;
+    font-size: 20px;
   }
   
   .minimal-icon {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+  }
+  
+  .minimal-title {
+    font-size: 12px;
+    margin-bottom: 6px;
   }
 }

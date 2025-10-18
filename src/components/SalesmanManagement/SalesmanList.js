@@ -59,9 +59,15 @@ const SalesmanList = ({ onDataChange }) => {
                          salesman.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          salesman.username.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? salesman.is_active : !salesman.is_active);
+    // Filter by status if statusFilter is set
+    if (statusFilter === 'active') {
+      return matchesSearch && salesman.is_active;
+    } else if (statusFilter === 'inactive') {
+      return matchesSearch && !salesman.is_active;
+    }
     
-    return matchesSearch && matchesStatus;
+    // Show all if no status filter or 'all' is selected
+    return matchesSearch;
   });
 
   const handleStatusToggle = async (salesmanId) => {
@@ -75,7 +81,7 @@ const SalesmanList = ({ onDataChange }) => {
       );
       
       if (response.status === 200) {
-        // Update local state
+        // Update local state with new status
         setSalesmanData(prev => prev.map(s => 
           s.id === salesmanId ? { ...s, is_active: newStatus } : s
         ));
@@ -247,9 +253,9 @@ const SalesmanList = ({ onDataChange }) => {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="all">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
+              <option value="all">All Salesmen</option>
+              <option value="active">Active Salesmen</option>
+              <option value="inactive">Inactive Salesmen</option>
             </select>
           </div>
         </div>
