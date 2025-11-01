@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Mail, Send, Clock, AlertCircle } from 'lucide-react';
+import API_CONFIG from '../../config/apiConfig';
 import './CampaignManagement.css';
 
 const CampaignManagement = () => {
@@ -19,7 +20,7 @@ const CampaignManagement = () => {
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('http://localhost:5000/api/campaigns');
+      const response = await axios.get(`${API_CONFIG.getBaseURL()}/campaigns`);
       setCampaigns(response.data.campaigns || []);
       setError('');
     } catch (err) {
@@ -36,7 +37,7 @@ const CampaignManagement = () => {
     }
 
     try {
-      await axios.delete(`http://localhost:5000/api/campaigns/${campaignId}`);
+      await axios.delete(`${API_CONFIG.getBaseURL()}/campaigns/${campaignId}`);
       setCampaigns(campaigns.filter(c => c.id !== campaignId));
       setSuccess('Campaign deleted successfully');
       setTimeout(() => setSuccess(''), 3000);
@@ -49,7 +50,7 @@ const CampaignManagement = () => {
 
   const handleViewDetails = async (campaignId) => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/campaigns/${campaignId}`);
+      const response = await axios.get(`${API_CONFIG.getBaseURL()}/campaigns/${campaignId}`);
       setSelectedCampaign(response.data);
       setShowDetailsModal(true);
     } catch (err) {

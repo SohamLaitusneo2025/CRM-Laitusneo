@@ -22,9 +22,10 @@ import {
 import Modal from '../Modal/Modal';
 import ProductForm from './ProductForm';
 import axios from 'axios';
+import API_CONFIG from '../../config/apiConfig';
 import './ProductManagement.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE = API_CONFIG.getBaseURL();
 
 const ProductManagement = () => {
   const [products, setProducts] = useState([]);

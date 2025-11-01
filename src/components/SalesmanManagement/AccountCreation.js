@@ -3,8 +3,9 @@ import { Save, UserPlus, Users, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import Modal from '../Modal/Modal';
 import './AccountCreation.css';
 import axios from 'axios';
+import API_CONFIG from '../../config/apiConfig';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE = API_CONFIG.getBaseURL();
 
 const AccountCreation = ({ onDataChange }) => {
   const [formData, setFormData] = useState({

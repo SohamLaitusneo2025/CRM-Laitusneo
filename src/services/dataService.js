@@ -1,8 +1,9 @@
 // Data service with API integration for Python backend
+import API_CONFIG from '../config/apiConfig';
 
 class DataService {
   constructor() {
-    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    this.baseURL = API_CONFIG.getBaseURL();
   }
 
   // Retrieve auth token from any supported storage key

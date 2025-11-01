@@ -1,7 +1,9 @@
 // Google Meet Integration Service
+import API_CONFIG from '../config/apiConfig';
+
 class GoogleMeetService {
   constructor() {
-    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    this.baseURL = API_CONFIG.getBaseURL();
   }
 
   // Get auth token

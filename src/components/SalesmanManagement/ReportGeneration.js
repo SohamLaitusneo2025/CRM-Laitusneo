@@ -4,6 +4,7 @@ import Modal from '../Modal/Modal';
 import axios from 'axios';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import API_CONFIG from '../../config/apiConfig';
 import './ReportGeneration.css';
 
 const ReportGeneration = () => {
@@ -26,7 +27,7 @@ const ReportGeneration = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+  const API_BASE = API_CONFIG.getBaseURL();
   const token = localStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('jwt');
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 

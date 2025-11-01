@@ -8,6 +8,7 @@ import TaskAssignment from './TaskAssignment';
 import SalesmanUpdates from './SalesmanUpdates';
 import ReportGeneration from './ReportGeneration';
 import axios from 'axios';
+import API_CONFIG from '../../config/apiConfig';
 import './SalesmanManagement.css';
 
 const SalesmanManagement = () => {
@@ -21,7 +22,7 @@ const SalesmanManagement = () => {
   });
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+  const API_BASE = API_CONFIG.getBaseURL();
   const token = localStorage.getItem('access_token') || localStorage.getItem('token') || localStorage.getItem('jwt');
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 

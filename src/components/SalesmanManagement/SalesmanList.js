@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, UserCheck, UserX, Key, Trash2 } from 'lucide-react';
 import Modal from '../Modal/Modal';
 import axios from 'axios';
+import API_CONFIG from '../../config/apiConfig';
 import './SalesmanList.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE = API_CONFIG.getBaseURL();
 
 const SalesmanList = ({ onDataChange }) => {
   const [searchTerm, setSearchTerm] = useState('');

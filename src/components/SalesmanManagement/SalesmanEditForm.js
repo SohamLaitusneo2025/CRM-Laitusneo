@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, User, Mail, Phone, UserCheck, UserX } from 'lucide-react';
 import axios from 'axios';
+import API_CONFIG from '../../config/apiConfig';
 import './SalesmanEditForm.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE = API_CONFIG.getBaseURL();
 
 const SalesmanEditForm = ({ 
   salesman, 

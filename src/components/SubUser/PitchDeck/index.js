@@ -17,9 +17,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 import axios from 'axios';
+import API_CONFIG from '../../../config/apiConfig';
 import './PitchDeck.css';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE = API_CONFIG.getBaseURL();
 
 const SubUserPitchDeck = () => {
   const [products, setProducts] = useState([]);
